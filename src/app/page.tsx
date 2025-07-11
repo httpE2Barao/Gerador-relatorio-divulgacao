@@ -1,103 +1,163 @@
-import Image from "next/image";
+'use client';
 
-export default function Home() {
+import { useState, ChangeEvent, FormEvent } from 'react';
+
+interface ImageItem {
+  file: File;
+  preview: string;
+  title: string;
+}
+
+export default function HomePage() {
+  const [projectTitle, setProjectTitle] = useState('Bertoldo ou o tubarão que queria ser gente');
+  const [sponsor, setSponsor] = useState('Caixa Cultural Curitiba');
+
+  const [coverImage, setCoverImage] = useState<File | null>(null);
+  const [coverPreview, setCoverPreview] = useState<string>('');
+
+  const [items, setItems] = useState<ImageItem[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const handleCoverImageChange = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files?.[0]) {
+      const file = e.target.files?.[0];
+      setCoverImage(file);
+      setCoverPreview(URL.createObjectURL(file));
+    }
+  };
+
+  const handleProofImagesChange = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const newFiles = Array.from(e.target.files).map(file => ({
+        file,
+        preview: URL.createObjectURL(file),
+        title: '',
+      }));
+      setItems(prevItems => [...prevItems, ...newFiles]);
+    }
+    e.target.value = '';
+  };
+
+  const handleTitleChange = (index: number, newTitle: string) => {
+    const updatedItems = [...items];
+    updatedItems.at(index)!.title = newTitle;
+    setItems(updatedItems);
+  };
+
+  // NOVA FUNÇÃO: Para deletar um item da lista
+  const handleDeleteItem = (index: number) => {
+    setItems(prevItems => prevItems.filter((_, i) => i !== index));
+  };
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!coverImage) {
+        alert('Por favor, adicione uma imagem de capa.');
+        return;
+    }
+    if (items.length === 0) {
+      alert('Por favor, adicione ao menos uma imagem de comprovação.');
+      return;
+    }
+    setLoading(true);
+
+    const formData = new FormData();
+
+    formData.append('projectTitle', projectTitle);
+    formData.append('sponsor', sponsor);
+    formData.append('coverImage', coverImage);
+
+    items.forEach((item) => {
+      formData.append('proof_files', item.file);
+      formData.append('titles', item.title);
+    });
+
+    try {
+      const response = await fetch('/api/generate-pdf', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Falha ao gerar o PDF');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'comprovacao.pdf';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+
+    } catch (error: any) {
+      console.error(error);
+      alert(`Ocorreu um erro: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+    <main className="container mx-auto p-4 md:p-8 bg-white text-black">
+      <form onSubmit={handleSubmit}>
+        <div className="mb-8 p-6 border border-gray-300 rounded-lg">
+          <h2 className="text-2xl font-bold mb-4">1. Dados da Capa</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <div className="mb-4">
+                <label className="block text-base font-medium mb-1">Título do Projeto</label>
+                <input type="text" value={projectTitle} onChange={e => setProjectTitle(e.target.value)} className="mt-1 block w-full p-2 border border-gray-400 rounded-md shadow-sm focus:border-black focus:ring-black"/>
+              </div>
+              <div>
+                <label className="block text-base font-medium mb-1">Patrocinador</label>
+                <input type="text" value={sponsor} onChange={e => setSponsor(e.target.value)} className="mt-1 block w-full p-2 border border-gray-400 rounded-md shadow-sm focus:border-black focus:ring-black"/>
+              </div>
+            </div>
+            <div>
+              <label className="block text-base font-medium mb-1">Imagem de Capa</label>
+              <input type="file" accept="image/png, image/jpeg" onChange={handleCoverImageChange} className="mt-1 block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-200 file:text-black hover:file:bg-gray-300" required/>
+              {coverPreview && <img src={coverPreview} alt="Preview da capa" className="mt-4 rounded-lg w-full object-contain h-32 border border-gray-200"/>}
+            </div>
+          </div>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+
+        <div className="mb-6">
+          <h2 className="text-xl font-bold mb-2">2. Adicionar Imagens de Comprovação</h2>
+          <input type="file" multiple accept="image/png, image/jpeg" onChange={handleProofImagesChange} className="block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-200 file:text-black hover:file:bg-gray-300"/>
+        </div>
+
+        {items.length > 0 && (
+          <div className="mb-6">
+             <h3 className="text-xl font-bold mb-2">3. Locais das Imagens</h3>
+            <div className="grid grid-cols-3 gap-4"> {/* Alterado para 3 colunas fixas */}
+              {items.map((item, index) => (
+                <div key={`${item.file.name}-${index}`} className="border border-gray-300 rounded-lg relative">
+                  <img src={item.preview} alt={`Preview ${index}`} className="w-full h-auto object-cover rounded-t-lg" style={{ aspectRatio: '2/3' }} /> {/* Proporção para colunas finas e compridas */}
+                  <div className="p-2">
+                    <input type="text" placeholder="Local" value={item.title} onChange={(e) => handleTitleChange(index, e.target.value)} className="w-full p-1 border border-gray-400 rounded-md shadow-sm focus:border-black focus:ring-black text-sm" required/>
+                  </div>
+                  {/* Botão de deletar */}
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteItem(index)}
+                    className="absolute top-2 right-2 bg-red-500 hover:bg-red-700 text-white text-xs font-bold py-1 px-1 rounded opacity-75 focus:outline-none focus:shadow-outline"
+                  >
+                    X
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <button type="submit" disabled={loading || items.length === 0} className="w-full py-3 px-4 bg-black text-white font-semibold rounded-lg shadow-md hover:bg-gray-800 disabled:bg-gray-400 disabled:cursor-not-allowed">
+            {loading ? 'Gerando PDF...' : 'Gerar PDF de Comprovação'}
+        </button>
+      </form>
+    </main>
   );
 }
