@@ -9,8 +9,8 @@ interface ImageItem {
 }
 
 export default function HomePage() {
-  const [projectTitle, setProjectTitle] = useState('Bertoldo ou o tubarão que queria ser gente');
-  const [sponsor, setSponsor] = useState('Caixa Cultural Curitiba');
+  const [projectTitle, setProjectTitle] = useState('');
+  const [sponsor, setSponsor] = useState('');
   
   const [coverImage, setCoverImage] = useState<File | null>(null);
   const [coverPreview, setCoverPreview] = useState<string>('');
