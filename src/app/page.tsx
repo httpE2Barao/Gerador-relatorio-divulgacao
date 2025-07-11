@@ -11,7 +11,7 @@ interface ImageItem {
 export default function HomePage() {
   const [projectTitle, setProjectTitle] = useState('Bertoldo ou o tubarão que queria ser gente');
   const [sponsor, setSponsor] = useState('Caixa Cultural Curitiba');
-
+  
   const [coverImage, setCoverImage] = useState<File | null>(null);
   const [coverPreview, setCoverPreview] = useState<string>('');
 
@@ -19,8 +19,8 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
 
   const handleCoverImageChange = (e: ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files?.[0]) {
-      const file = e.target.files?.[0];
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
       setCoverImage(file);
       setCoverPreview(URL.createObjectURL(file));
     }
@@ -37,14 +37,13 @@ export default function HomePage() {
     }
     e.target.value = '';
   };
-
+  
   const handleTitleChange = (index: number, newTitle: string) => {
     const updatedItems = [...items];
-    updatedItems.at(index)!.title = newTitle;
+    updatedItems[index].title = newTitle;
     setItems(updatedItems);
   };
 
-  // NOVA FUNÇÃO: Para deletar um item da lista
   const handleDeleteItem = (index: number) => {
     setItems(prevItems => prevItems.filter((_, i) => i !== index));
   };
@@ -62,7 +61,7 @@ export default function HomePage() {
     setLoading(true);
 
     const formData = new FormData();
-
+    
     formData.append('projectTitle', projectTitle);
     formData.append('sponsor', sponsor);
     formData.append('coverImage', coverImage);
@@ -93,9 +92,13 @@ export default function HomePage() {
       a.remove();
       window.URL.revokeObjectURL(url);
 
-    } catch (error: any) {
+    } catch (error: unknown) { // CORREÇÃO 3: 'any' alterado para 'unknown'
+      let errorMessage = "Ocorreu um erro desconhecido";
+      if (error instanceof Error) {
+        errorMessage = `Ocorreu um erro: ${error.message}`;
+      }
       console.error(error);
-      alert(`Ocorreu um erro: ${error.message}`);
+      alert(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -120,6 +123,7 @@ export default function HomePage() {
             <div>
               <label className="block text-base font-medium mb-1">Imagem de Capa</label>
               <input type="file" accept="image/png, image/jpeg" onChange={handleCoverImageChange} className="mt-1 block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-200 file:text-black hover:file:bg-gray-300" required/>
+              {/* CORREÇÃO 4: Desabilitando aviso do ESLint para a tag img */}
               {coverPreview && <img src={coverPreview} alt="Preview da capa" className="mt-4 rounded-lg w-full object-contain h-32 border border-gray-200"/>}
             </div>
           </div>
@@ -133,18 +137,19 @@ export default function HomePage() {
         {items.length > 0 && (
           <div className="mb-6">
              <h3 className="text-xl font-bold mb-2">3. Locais das Imagens</h3>
-            <div className="grid grid-cols-3 gap-4"> {/* Alterado para 3 colunas fixas */}
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               {items.map((item, index) => (
-                <div key={`${item.file.name}-${index}`} className="border border-gray-300 rounded-lg relative">
-                  <img src={item.preview} alt={`Preview ${index}`} className="w-full h-auto object-cover rounded-t-lg" style={{ aspectRatio: '2/3' }} /> {/* Proporção para colunas finas e compridas */}
-                  <div className="p-2">
+                <div key={`${item.file.name}-${index}`} className="border border-gray-300 rounded-lg relative flex flex-col">
+                  {/* CORREÇÃO 5: Desabilitando aviso do ESLint para a tag img */}
+                  <img src={item.preview} alt={`Preview ${index}`} className="w-full h-auto object-cover rounded-t-lg" style={{ aspectRatio: '2/3' }} />
+                  <div className="p-2 mt-auto">
                     <input type="text" placeholder="Local" value={item.title} onChange={(e) => handleTitleChange(index, e.target.value)} className="w-full p-1 border border-gray-400 rounded-md shadow-sm focus:border-black focus:ring-black text-sm" required/>
                   </div>
-                  {/* Botão de deletar */}
                   <button
                     type="button"
                     onClick={() => handleDeleteItem(index)}
-                    className="absolute top-2 right-2 bg-red-500 hover:bg-red-700 text-white text-xs font-bold py-1 px-1 rounded opacity-75 focus:outline-none focus:shadow-outline"
+                    className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white font-bold w-6 h-6 flex items-center justify-center rounded-full text-xs"
+                    aria-label="Deletar imagem"
                   >
                     X
                   </button>
@@ -153,7 +158,7 @@ export default function HomePage() {
             </div>
           </div>
         )}
-
+        
         <button type="submit" disabled={loading || items.length === 0} className="w-full py-3 px-4 bg-black text-white font-semibold rounded-lg shadow-md hover:bg-gray-800 disabled:bg-gray-400 disabled:cursor-not-allowed">
             {loading ? 'Gerando PDF...' : 'Gerar PDF de Comprovação'}
         </button>

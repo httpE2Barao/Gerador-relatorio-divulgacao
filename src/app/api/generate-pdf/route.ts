@@ -25,8 +25,7 @@ export async function POST(request: Request) {
     const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-    // --- LAYOUT DA PÁGINA DE CAPA (Página 1) ---
-    const coverPage = pdfDoc.addPage([PageSizes.A4[1], PageSizes.A4[0]]); // Paisagem
+    const coverPage = pdfDoc.addPage([PageSizes.A4[1], PageSizes.A4[0]]);
     const { width, height } = coverPage.getSize();
     const margin = 50;
     const midPointX = width / 2;
@@ -63,7 +62,8 @@ export async function POST(request: Request) {
       color: rgb(0.2, 0.2, 0.2),
     });
     
-    let signatureY = margin + 100;
+    // CORREÇÃO 1: 'let' alterado para 'const'
+    const signatureY = margin + 100;
     const signatureImage = await pdfDoc.embedPng(signatureImageBytes);
     const signatureDims = signatureImage.scaleToFit(280, 90); 
 
@@ -107,7 +107,6 @@ export async function POST(request: Request) {
       height: scaled.height,
     });
     
-    // --- PÁGINAS DE COMPROVAÇÃO (LÓGICA DE LAYOUT ATUALIZADA) ---
     if (proofFiles.length > 0) {
       const imagesPerRow = 3;
       const imageGap = 20;
@@ -119,30 +118,27 @@ export async function POST(request: Request) {
       for (let i = 0; i < proofFiles.length; i++) {
         const file = proofFiles[i];
         const title = titles[i];
+        
         const colIndex = i % imagesPerRow;
 
         if (i % imagesPerRow === 0) {
           proofPage = pdfDoc.addPage([PageSizes.A4[1], PageSizes.A4[0]]);
         }
         
-        // PONTO-CHAVE 1: Define a altura máxima que a imagem pode ter na página.
-        const maxProofImageHeight = height - margin * 2 - 40; // Subtrai 40 para dar espaço ao título
+        const maxProofImageHeight = height - margin * 2 - 40;
 
         const proofImageBytes = await file.arrayBuffer();
         const proofImage = file.type === 'image/png' 
           ? await pdfDoc.embedPng(proofImageBytes) 
           : await pdfDoc.embedJpg(proofImageBytes);
         
-        // PONTO-CHAVE 2: Escala a imagem para preencher a largura da coluna E a altura máxima permitida.
         const scaledProofImg = proofImage.scaleToFit(imageWidth, maxProofImageHeight);
         
         const xPosition = margin + colIndex * (imageWidth + imageGap);
-        
-        // PONTO-CHAVE 3: Posiciona a imagem no topo da página (abaixo da margem).
         const yPosition = height - margin - scaledProofImg.height;
 
         proofPage!.drawImage(proofImage, {
-          x: xPosition + (imageWidth - scaledProofImg.width) / 2, // Centraliza na coluna
+          x: xPosition + (imageWidth - scaledProofImg.width) / 2,
           y: yPosition,
           width: scaledProofImg.width,
           height: scaledProofImg.height,
@@ -151,7 +147,7 @@ export async function POST(request: Request) {
         const titleWidth = regularFont.widthOfTextAtSize(title, 12);
         proofPage!.drawText(title, {
           x: xPosition + (imageWidth - titleWidth) / 2,
-          y: yPosition - 20, // Posição fixa abaixo da imagem
+          y: yPosition - 20,
           font: regularFont,
           size: 12,
         });
@@ -164,8 +160,12 @@ export async function POST(request: Request) {
       headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="comprovacao.pdf"` },
     });
 
-  } catch (error: any) {
-    console.error('Erro na API:', error);
-    return NextResponse.json({ error: error.message || 'Erro interno do servidor.' }, { status: 500 });
+  } catch (error: unknown) { // CORREÇÃO 2: 'any' alterado para 'unknown'
+    let errorMessage = 'Erro interno do servidor.';
+    if (error instanceof Error) {
+        errorMessage = error.message;
+    }
+    console.error('Erro na API:', errorMessage);
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
