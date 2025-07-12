@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, ChangeEvent, FormEvent } from 'react';
+import heic2any from 'heic2any'; // Importa a biblioteca de conversão
 
 interface ImageItem {
   file: File;
@@ -18,22 +19,61 @@ export default function HomePage() {
   const [items, setItems] = useState<ImageItem[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const handleCoverImageChange = (e: ChangeEvent<HTMLInputElement>) => {
+  // --- NOVA FUNÇÃO AUXILIAR PARA PROCESSAR E CONVERTER IMAGENS ---
+  const processFile = async (file: File): Promise<File> => {
+    // Verifica se o arquivo é HEIC/HEIF pelo tipo ou extensão
+    const isHeic = file.type === 'image/heic' || file.type === 'image/heif' || file.name.toLowerCase().endsWith('.heic');
+
+    if (isHeic) {
+      setLoading(true); // Mostra o loading durante a conversão
+      try {
+        console.log('Convertendo arquivo HEIC para JPEG...');
+        const convertedBlob = await heic2any({
+          blob: file,
+          toType: 'image/jpeg',
+          quality: 0.9,
+        }) as Blob;
+
+        // Cria um novo arquivo a partir do Blob convertido
+        const newFileName = file.name.replace(/\.[^/.]+$/, "") + ".jpeg";
+        const convertedFile = new File([convertedBlob], newFileName, { type: 'image/jpeg' });
+        console.log('Conversão concluída.');
+        return convertedFile;
+      } catch (error) {
+        console.error('Erro ao converter HEIC:', error);
+        alert('Houve um erro ao converter a imagem HEIC. Por favor, tente uma imagem JPEG ou PNG.');
+        return file; // Retorna o arquivo original em caso de erro
+      } finally {
+        setLoading(false);
+      }
+    }
+    // Se não for HEIC, retorna o arquivo original
+    return file;
+  };
+
+  const handleCoverImageChange = async (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setCoverImage(file);
-      setCoverPreview(URL.createObjectURL(file));
+      const originalFile = e.target.files[0];
+      const processedFile = await processFile(originalFile); // Processa o arquivo
+
+      setCoverImage(processedFile);
+      setCoverPreview(URL.createObjectURL(processedFile));
     }
   };
 
-  const handleProofImagesChange = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleProofImagesChange = async (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      const newFiles = Array.from(e.target.files).map(file => ({
+      // Mapeia e processa todos os arquivos selecionados
+      const processedFiles = await Promise.all(
+        Array.from(e.target.files).map(file => processFile(file))
+      );
+
+      const newItems = processedFiles.map(file => ({
         file,
         preview: URL.createObjectURL(file),
         title: '',
       }));
-      setItems(prevItems => [...prevItems, ...newFiles]);
+      setItems(prevItems => [...prevItems, ...newItems]);
     }
     e.target.value = '';
   };
@@ -82,7 +122,6 @@ export default function HomePage() {
         try {
           const errorData = await response.json();
           errorMessage = errorData.error || errorMessage;
-          // CORREÇÃO: Variável do catch removida pois não é utilizada.
         } catch {
           const textError = await response.text();
           errorMessage = textError || errorMessage;
@@ -117,6 +156,7 @@ export default function HomePage() {
   return (
     <main className="container mx-auto p-4 md:p-8 bg-white text-black">
       <form onSubmit={handleSubmit}>
+        {/* O resto do seu JSX continua o mesmo, não precisa alterar */}
         <div className="mb-8 p-6 border border-gray-300 rounded-lg">
           <h2 className="text-2xl font-bold mb-4">1. Dados da Capa</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -132,7 +172,7 @@ export default function HomePage() {
             </div>
             <div>
               <label className="block text-base font-medium mb-1">Imagem de Capa</label>
-              <input type="file" accept="image/png, image/jpeg" onChange={handleCoverImageChange} className="mt-1 block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-200 file:text-black hover:file:bg-gray-300" required />
+              <input type="file" accept="image/*" onChange={handleCoverImageChange} className="mt-1 block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-200 file:text-black hover:file:bg-gray-300" required />
               {/* eslint-disable-next-line @next/next/no-img-element */}
               {coverPreview && <img src={coverPreview} alt="Preview da capa" className="mt-4 rounded-lg w-full object-contain h-32 border border-gray-200" />}
             </div>
@@ -140,7 +180,7 @@ export default function HomePage() {
         </div>
         <div className="mb-6">
           <h2 className="text-xl font-bold mb-2">2. Adicionar Imagens de Comprovação</h2>
-          <input type="file" multiple accept="image/png, image/jpeg" onChange={handleProofImagesChange} className="block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-200 file:text-black hover:file:bg-gray-300" />
+          <input type="file" multiple accept="image/*" onChange={handleProofImagesChange} className="block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-200 file:text-black hover:file:bg-gray-300" />
         </div>
         {items.length > 0 && (
           <div className="mb-6">
