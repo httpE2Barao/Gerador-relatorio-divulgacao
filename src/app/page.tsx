@@ -77,10 +77,10 @@ export default function HomePage() {
         body: formData,
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Falha ao gerar o PDF');
-      }
+    if (!response.ok) {
+      const errorData = await response.json(); 
+      throw new Error(errorData.error || 'Falha ao gerar o PDF');
+    }
 
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
