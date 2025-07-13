@@ -12,17 +12,16 @@ export const config = {
   },
 };
 
-// Função para limpar e formatar o texto para nomes de arquivo
 function slugify(text: string): string {
   if (!text) return '';
   return text
     .toString()
     .toLowerCase()
-    .replace(/\s+/g, '-')       // Substitui espaços por -
-    .replace(/[^\w\-]+/g, '')   // Remove caracteres não alfanuméricos (exceto -)
-    .replace(/\-\-+/g, '-')     // Substitui múltiplos - por um único -
-    .replace(/^-+/, '')        // Remove - do início
-    .replace(/-+$/, '');       // Remove - do fim
+    .replace(/\s+/g, '-')
+    .replace(/[^\w\-]+/g, '')
+    .replace(/\-\-+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '');
 }
 
 async function processAndEmbedImage(pdfDoc: PDFDocument, imageFile: File) {
@@ -48,19 +47,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Faltam arquivos de capa ou de comprovação' }, { status: 400 });
     }
 
-    // --- CRIAÇÃO DO NOME DINÂMICO DO ARQUIVO ---
     const cleanTitle = slugify(projectTitle);
     const cleanSponsor = slugify(sponsor);
     const fileName = `Comprovacao_${cleanTitle}_${cleanSponsor}.pdf`;
-    // ---------------------------------------------
 
     const pdfDoc = await PDFDocument.create();
-    // ... (O resto do seu código de criação do PDF continua o mesmo)
 
-    // [O CÓDIGO DE CRIAÇÃO DAS PÁGINAS FOI OMITIDO AQUI PARA BREVIDADE, MAS DEVE SER MANTIDO]
-    // ... (Cole o código da resposta anterior aqui, desde a fonte até o final do loop 'for')
-
-    // O código abaixo é a continuação...
     const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
@@ -87,6 +79,7 @@ export async function POST(request: Request) {
     const imgMaxWidth = width - rightColumnX - coverMargin;
     const scaled = coverImage.scaleToFit(imgMaxWidth, imgMaxHeight);
     coverPage.drawImage(coverImage, { x: rightColumnX + (imgMaxWidth - scaled.width) / 2, y: coverMargin + (imgMaxHeight - scaled.height) / 2, width: scaled.width, height: scaled.height });
+
     if (proofFiles.length > 0) {
       const imagesPerRow = 3;
       const rowsPerPage = 1;
@@ -119,15 +112,56 @@ export async function POST(request: Request) {
       }
     }
 
-    const pdfBytes = await pdfDoc.save();
+    // --- PÁGINA FINAL COM A LISTA DE LOCAIS ---
+    if (titles.filter(t => t.trim() !== '').length > 0) {
+      // CORREÇÃO 1: Página em modo paisagem (horizontal)
+      const listPage = pdfDoc.addPage([PageSizes.A4[1], PageSizes.A4[0]]);
+      const { width: pageWidth, height: pageHeight } = listPage.getSize();
 
+      const pageMargin = 60;
+      const listFontSize = 18;
+      const listLineHeight = 40;
+      // CORREÇÃO 2: Aumentando para 3 colunas para aproveitar o espaço horizontal
+      const numColumns = 3;
+
+      listPage.drawText('Locais de Divulgação Comprovados', {
+        x: pageMargin,
+        y: pageHeight - pageMargin,
+        font: boldFont,
+        size: 20,
+        color: rgb(0, 0, 0),
+      });
+
+      const startY = pageHeight - pageMargin - 40;
+      const itemsPerColumn = Math.ceil(titles.length / numColumns);
+      const columnWidth = (pageWidth - pageMargin * 2) / numColumns + 20;
+
+      titles.forEach((title, i) => {
+        if (title.trim() === '') return;
+
+        const columnIndex = Math.floor(i / itemsPerColumn);
+        const itemIndexInColumn = i % itemsPerColumn;
+
+        const x = pageMargin + (columnIndex * columnWidth);
+        const y = startY - (itemIndexInColumn * listLineHeight);
+
+        listPage.drawText(`• ${title}`, {
+          x: x,
+          y: y,
+          font: regularFont,
+          size: listFontSize,
+          color: rgb(0.2, 0.2, 0.2),
+          maxWidth: columnWidth - 20,
+        });
+      });
+    }
+
+    const pdfBytes = await pdfDoc.save();
     return new NextResponse(pdfBytes, {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
-        // Atualiza o cabeçalho com o nome do arquivo dinâmico
         'Content-Disposition': `attachment; filename="${fileName}"`,
-        // Adiciona cabeçalhos para comunicar o nome do arquivo ao frontend
         'X-Suggested-Filename': fileName,
         'Access-Control-Expose-Headers': 'X-Suggested-Filename',
       },
