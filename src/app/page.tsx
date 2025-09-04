@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, ChangeEvent, FormEvent } from 'react';
+import { useState, useEffect, ChangeEvent, FormEvent } from 'react';
 // REMOVIDO: A importação estática abaixo causava o erro no build.
 // import heic2any from 'heic2any'; 
 
 interface ImageItem {
-  file: File;
+  id: string;
+  file?: File; // Tornando opcional pois pode não estar disponível ao restaurar do localStorage
   preview: string;
   title: string;
 }
@@ -19,6 +20,49 @@ export default function HomePage() {
 
   const [items, setItems] = useState<ImageItem[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Carregar dados do localStorage quando o componente montar
+  useEffect(() => {
+    const savedProjectTitle = localStorage.getItem('projectTitle');
+    const savedSponsor = localStorage.getItem('sponsor');
+    const savedCoverPreview = localStorage.getItem('coverPreview');
+    const savedItems = localStorage.getItem('proofItems');
+
+    if (savedProjectTitle) setProjectTitle(savedProjectTitle);
+    if (savedSponsor) setSponsor(savedSponsor);
+    if (savedCoverPreview) setCoverPreview(savedCoverPreview);
+    
+    if (savedItems) {
+      try {
+        const parsedItems = JSON.parse(savedItems);
+        // Como não podemos salvar arquivos no localStorage, precisamos apenas dos previews e títulos
+        const restoredItems = parsedItems.map((item: any) => ({
+          id: item.id,
+          preview: item.preview,
+          title: item.title
+          // file: null - não podemos restaurar o arquivo do localStorage
+        }));
+        setItems(restoredItems);
+      } catch (e) {
+        console.error('Erro ao restaurar itens do localStorage:', e);
+      }
+    }
+  }, []);
+
+  // Salvar dados no localStorage sempre que houver alterações
+  useEffect(() => {
+    localStorage.setItem('projectTitle', projectTitle);
+    localStorage.setItem('sponsor', sponsor);
+    localStorage.setItem('coverPreview', coverPreview);
+    
+    // Salvar apenas os dados que podem ser serializados (preview e title)
+    const itemsToSave = items.map(item => ({
+      id: item.id,
+      preview: item.preview,
+      title: item.title
+    }));
+    localStorage.setItem('proofItems', JSON.stringify(itemsToSave));
+  }, [projectTitle, sponsor, coverPreview, items]);
 
   const processFile = async (file: File): Promise<File> => {
     const isHeic = file.type === 'image/heic' || file.type === 'image/heif' || file.name.toLowerCase().endsWith('.heic');
@@ -69,6 +113,7 @@ export default function HomePage() {
       );
 
       const newItems = processedFiles.map(file => ({
+        id: Math.random().toString(36).substr(2, 9), // ID único para cada item
         file,
         preview: URL.createObjectURL(file),
         title: '',
@@ -90,7 +135,7 @@ export default function HomePage() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!coverImage) {
+    if (!coverImage && !coverPreview) {
       alert('Por favor, adicione uma imagem de capa.');
       return;
     }
@@ -98,16 +143,35 @@ export default function HomePage() {
       alert('Por favor, adicione ao menos uma imagem de comprovação.');
       return;
     }
+    
+    // Verificar se todos os itens têm título preenchido
+    const itemsWithoutTitle = items.filter(item => !item.title.trim());
+    if (itemsWithoutTitle.length > 0) {
+      alert('Por favor, preencha o local para todas as imagens de comprovação.');
+      return;
+    }
+    
     setLoading(true);
 
     const formData = new FormData();
 
     formData.append('projectTitle', projectTitle);
     formData.append('sponsor', sponsor);
-    formData.append('coverImage', coverImage);
+    if (coverImage) {
+      formData.append('coverImage', coverImage);
+    }
 
-    items.forEach((item) => {
-      formData.append('proof_files', item.file);
+    // Contar quantos itens têm arquivo disponível (não restaurados do localStorage)
+    const itemsWithFiles = items.filter(item => item.file);
+    
+    if (itemsWithFiles.length === 0) {
+      alert('Por favor, adicione novas imagens de comprovação. As imagens restauradas do cache não podem ser reutilizadas.');
+      setLoading(false);
+      return;
+    }
+
+    itemsWithFiles.forEach((item) => {
+      formData.append('proof_files', item.file!);
       formData.append('titles', item.title);
     });
 
@@ -141,6 +205,17 @@ export default function HomePage() {
       a.remove();
       window.URL.revokeObjectURL(url);
 
+      // Limpar dados após geração bem-sucedida do PDF
+      localStorage.removeItem('projectTitle');
+      localStorage.removeItem('sponsor');
+      localStorage.removeItem('coverPreview');
+      localStorage.removeItem('proofItems');
+      setProjectTitle('');
+      setSponsor('');
+      setCoverImage(null);
+      setCoverPreview('');
+      setItems([]);
+
     } catch (error: unknown) {
       let errorMessage = "Ocorreu um erro desconhecido";
       if (error instanceof Error) {
@@ -171,7 +246,7 @@ export default function HomePage() {
             </div>
             <div>
               <label className="block text-base font-medium mb-1">Imagem de Capa</label>
-              <input type="file" accept="image/*" onChange={handleCoverImageChange} className="mt-1 block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-200 file:text-black hover:file:bg-gray-300" required />
+              <input type="file" accept="image/*" onChange={handleCoverImageChange} className="mt-1 block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-200 file:text-black hover:file:bg-gray-300" />
               {/* eslint-disable-next-line @next/next/no-img-element */}
               {coverPreview && <img src={coverPreview} alt="Preview da capa" className="mt-4 rounded-lg w-full object-contain h-32 border border-gray-200" />}
             </div>
@@ -186,7 +261,7 @@ export default function HomePage() {
             <h3 className="text-xl font-bold mb-2">3. Locais das Imagens</h3>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               {items.map((item, index) => (
-                <div key={`${item.file.name}-${index}`} className="border border-gray-300 rounded-lg relative flex flex-col">
+                <div key={`${item.id}`} className="border border-gray-300 rounded-lg relative flex flex-col">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={item.preview} alt={`Preview ${index}`} className="w-full h-auto object-cover rounded-t-lg" style={{ aspectRatio: '2/3' }} />
                   <div className="p-2 mt-auto">
