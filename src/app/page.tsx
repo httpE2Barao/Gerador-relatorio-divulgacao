@@ -4,6 +4,13 @@ import { useState, useEffect, ChangeEvent, FormEvent } from 'react';
 // REMOVIDO: A importação estática abaixo causava o erro no build.
 // import heic2any from 'heic2any'; 
 
+// Interface para os itens armazenados no localStorage
+interface StoredItem {
+  id: string;
+  preview: string;
+  title: string;
+}
+
 interface ImageItem {
   id: string;
   file?: File; // Tornando opcional pois pode não estar disponível ao restaurar do localStorage
@@ -34,13 +41,13 @@ export default function HomePage() {
     
     if (savedItems) {
       try {
-        const parsedItems = JSON.parse(savedItems);
+        const parsedItems: StoredItem[] = JSON.parse(savedItems);
         // Como não podemos salvar arquivos no localStorage, precisamos apenas dos previews e títulos
-        const restoredItems = parsedItems.map((item: any) => ({
+        const restoredItems: ImageItem[] = parsedItems.map((item) => ({
           id: item.id,
           preview: item.preview,
           title: item.title
-          // file: null - não podemos restaurar o arquivo do localStorage
+          // file: undefined - não podemos restaurar o arquivo do localStorage
         }));
         setItems(restoredItems);
       } catch (e) {
@@ -56,7 +63,7 @@ export default function HomePage() {
     localStorage.setItem('coverPreview', coverPreview);
     
     // Salvar apenas os dados que podem ser serializados (preview e title)
-    const itemsToSave = items.map(item => ({
+    const itemsToSave: StoredItem[] = items.map(item => ({
       id: item.id,
       preview: item.preview,
       title: item.title
