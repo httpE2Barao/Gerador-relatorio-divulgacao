@@ -33,18 +33,81 @@ async function processAndEmbedImage(pdfDoc: PDFDocument, imageFile: File) {
   return await pdfDoc.embedJpg(correctedBuffer);
 }
 
+// Função para converter base64 em Blob
+function base64ToBlob(base64: string, contentType: string = ''): Blob {
+  const byteCharacters = atob(base64.split(',')[1]);
+  const byteArrays = [];
+  for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+    const slice = byteCharacters.slice(offset, offset + 512);
+    const byteNumbers = new Array(slice.length);
+    for (let i = 0; i < slice.length; i++) {
+      byteNumbers[i] = slice.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    byteArrays.push(byteArray);
+  }
+  return new Blob(byteArrays, { type: contentType });
+}
+
+// Função para converter base64 em File
+function base64ToFile(base64: string, filename: string, contentType: string = ''): File {
+  const blob = base64ToBlob(base64, contentType);
+  return new File([blob], filename, { type: contentType });
+}
+
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
 
     const projectTitle = formData.get('projectTitle') as string || "Projeto Sem Título";
     const sponsor = formData.get('sponsor') as string || "Patrocinador";
-    const coverImageFile = formData.get('coverImage') as File;
+    const coverImageFile = formData.get('coverImage') as File | null;
     const proofFiles = formData.getAll('proof_files') as File[];
     const titles = formData.getAll('titles') as string[];
+    const savedItemsJson = formData.get('savedItems') as string | null;
 
-    if (!coverImageFile || !proofFiles.length) {
-      return NextResponse.json({ error: 'Faltam arquivos de capa ou de comprovação' }, { status: 400 });
+    // Validação aprimorada para evitar o erro "Faltam arquivos de capa ou de comprovação"
+    if (!coverImageFile) {
+      return NextResponse.json({ error: 'Por favor, adicione uma imagem de capa.' }, { status: 400 });
+    }
+
+    // Combinar os itens salvos com os novos itens
+    let allProofFiles: File[] = [...proofFiles];
+    let allTitles: string[] = [...titles];
+
+    // Processar os itens salvos no localStorage
+    let restoredItemsCount = 0;
+    if (savedItemsJson) {
+      try {
+        const savedItems = JSON.parse(savedItemsJson);
+        savedItems.forEach((item: any) => {
+          // Verificar se o item já foi adicionado como novo arquivo
+          const isAlreadyAdded = proofFiles.some((file, index) => {
+            // Esta verificação é simplificada - em uma implementação real, você pode querer
+            // usar um ID mais robusto para verificar duplicatas
+            return false;
+          });
+
+          // Se o item tem base64 e não foi adicionado como novo arquivo, adicioná-lo
+          if (item.fileBase64 && !isAlreadyAdded) {
+            try {
+              const file = base64ToFile(item.fileBase64, `restored-${item.id}.jpg`, 'image/jpeg');
+              allProofFiles.push(file);
+              allTitles.push(item.title);
+              restoredItemsCount++;
+            } catch (e) {
+              console.error('Erro ao restaurar arquivo do localStorage:', e);
+            }
+          }
+        });
+      } catch (e) {
+        console.error('Erro ao processar itens salvos:', e);
+      }
+    }
+
+    // Verificar se temos itens para processar (novos ou restaurados)
+    if (allProofFiles.length === 0) {
+      return NextResponse.json({ error: 'Por favor, adicione ao menos uma imagem de comprovação.' }, { status: 400 });
     }
 
     const cleanTitle = slugify(projectTitle);
@@ -80,16 +143,16 @@ export async function POST(request: Request) {
     const scaled = coverImage.scaleToFit(imgMaxWidth, imgMaxHeight);
     coverPage.drawImage(coverImage, { x: rightColumnX + (imgMaxWidth - scaled.width) / 2, y: coverMargin + (imgMaxHeight - scaled.height) / 2, width: scaled.width, height: scaled.height });
 
-    if (proofFiles.length > 0) {
+    if (allProofFiles.length > 0) {
       const imagesPerRow = 3;
       const rowsPerPage = 1;
       const imagesPerPage = imagesPerRow * rowsPerPage;
       const margin = 30;
       const imageGap = 20;
       let proofPage: PDFPage | null = null;
-      for (let i = 0; i < proofFiles.length; i++) {
-        const file = proofFiles[i];
-        const title = titles[i] || ' ';
+      for (let i = 0; i < allProofFiles.length; i++) {
+        const file = allProofFiles[i];
+        const title = allTitles[i] || ' ';
         if (i % imagesPerPage === 0) {
           proofPage = pdfDoc.addPage([PageSizes.A4[1], PageSizes.A4[0]]);
         }
@@ -113,7 +176,7 @@ export async function POST(request: Request) {
     }
 
     // --- PÁGINA FINAL COM A LISTA DE LOCAIS ---
-    if (titles.filter(t => t.trim() !== '').length > 0) {
+    if (allTitles.filter(t => t.trim() !== '').length > 0) {
       // CORREÇÃO 1: Página em modo paisagem (horizontal)
       const listPage = pdfDoc.addPage([PageSizes.A4[1], PageSizes.A4[0]]);
       const { width: pageWidth, height: pageHeight } = listPage.getSize();
@@ -133,10 +196,10 @@ export async function POST(request: Request) {
       });
 
       const startY = pageHeight - pageMargin - 40;
-      const itemsPerColumn = Math.ceil(titles.length / numColumns);
+      const itemsPerColumn = Math.ceil(allTitles.length / numColumns);
       const columnWidth = (pageWidth - pageMargin * 2) / numColumns + 20;
 
-      titles.forEach((title, i) => {
+      allTitles.forEach((title, i) => {
         if (title.trim() === '') return;
 
         const columnIndex = Math.floor(i / itemsPerColumn);

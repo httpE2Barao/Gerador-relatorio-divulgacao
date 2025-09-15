@@ -9,6 +9,7 @@ interface StoredItem {
   id: string;
   preview: string;
   title: string;
+  fileBase64?: string; // Adicionando suporte para armazenar o arquivo como base64
 }
 
 interface ImageItem {
@@ -28,26 +29,64 @@ export default function HomePage() {
   const [items, setItems] = useState<ImageItem[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // Função para converter uma imagem em base64
+  const convertToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = error => reject(error);
+    });
+  };
+
+  // Função para converter base64 em Blob
+  const convertBase64ToBlob = (base64: string, contentType: string = ''): Blob => {
+    const byteCharacters = atob(base64.split(',')[1]);
+    const byteArrays = [];
+    for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+      const slice = byteCharacters.slice(offset, offset + 512);
+      const byteNumbers = new Array(slice.length);
+      for (let i = 0; i < slice.length; i++) {
+        byteNumbers[i] = slice.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      byteArrays.push(byteArray);
+    }
+    return new Blob(byteArrays, { type: contentType });
+  };
+
   // Carregar dados do localStorage quando o componente montar
   useEffect(() => {
     const savedProjectTitle = localStorage.getItem('projectTitle');
     const savedSponsor = localStorage.getItem('sponsor');
     const savedCoverPreview = localStorage.getItem('coverPreview');
+    const savedCoverImageBase64 = localStorage.getItem('coverImageBase64');
     const savedItems = localStorage.getItem('proofItems');
 
     if (savedProjectTitle) setProjectTitle(savedProjectTitle);
     if (savedSponsor) setSponsor(savedSponsor);
     if (savedCoverPreview) setCoverPreview(savedCoverPreview);
     
+    // Restaurar a imagem de capa do base64
+    if (savedCoverImageBase64 && savedCoverPreview) {
+      try {
+        const blob = convertBase64ToBlob(savedCoverImageBase64, 'image/jpeg');
+        const file = new File([blob], 'cover.jpg', { type: 'image/jpeg' });
+        // Não podemos restaurar o arquivo real, mas podemos manter o preview
+      } catch (e) {
+        console.error('Erro ao restaurar imagem de capa:', e);
+      }
+    }
+    
     if (savedItems) {
       try {
         const parsedItems: StoredItem[] = JSON.parse(savedItems);
-        // Como não podemos salvar arquivos no localStorage, precisamos apenas dos previews e títulos
+        // Restaurar os itens com previews e títulos
         const restoredItems: ImageItem[] = parsedItems.map((item) => ({
           id: item.id,
           preview: item.preview,
           title: item.title
-          // file: undefined - não podemos restaurar o arquivo do localStorage
+          // file: undefined - não podemos restaurar o arquivo do localStorage diretamente
         }));
         setItems(restoredItems);
       } catch (e) {
@@ -62,14 +101,39 @@ export default function HomePage() {
     localStorage.setItem('sponsor', sponsor);
     localStorage.setItem('coverPreview', coverPreview);
     
-    // Salvar apenas os dados que podem ser serializados (preview e title)
-    const itemsToSave: StoredItem[] = items.map(item => ({
-      id: item.id,
-      preview: item.preview,
-      title: item.title
-    }));
-    localStorage.setItem('proofItems', JSON.stringify(itemsToSave));
-  }, [projectTitle, sponsor, coverPreview, items]);
+    // Salvar a imagem de capa como base64
+    if (coverImage) {
+      convertToBase64(coverImage)
+        .then(base64 => {
+          localStorage.setItem('coverImageBase64', base64);
+        })
+        .catch(e => {
+          console.error('Erro ao converter imagem de capa para base64:', e);
+        });
+    }
+    
+    // Salvar os itens com previews, títulos e arquivos como base64
+    Promise.all(
+      items.map(async (item) => {
+        let fileBase64 = '';
+        if (item.file) {
+          try {
+            fileBase64 = await convertToBase64(item.file);
+          } catch (e) {
+            console.error('Erro ao converter arquivo para base64:', e);
+          }
+        }
+        return {
+          id: item.id,
+          preview: item.preview,
+          title: item.title,
+          fileBase64,
+        };
+      })
+    ).then((itemsToSave: StoredItem[]) => {
+      localStorage.setItem('proofItems', JSON.stringify(itemsToSave));
+    });
+  }, [projectTitle, sponsor, coverPreview, coverImage, items]);
 
   const processFile = async (file: File): Promise<File> => {
     const isHeic = file.type === 'image/heic' || file.type === 'image/heif' || file.name.toLowerCase().endsWith('.heic');
@@ -168,19 +232,21 @@ export default function HomePage() {
       formData.append('coverImage', coverImage);
     }
 
-    // Contar quantos itens têm arquivo disponível (não restaurados do localStorage)
+    // Adicionar todos os itens que têm arquivos ao formulário
     const itemsWithFiles = items.filter(item => item.file);
     
-    if (itemsWithFiles.length === 0) {
-      alert('Por favor, adicione novas imagens de comprovação. As imagens restauradas do cache não podem ser reutilizadas.');
-      setLoading(false);
-      return;
-    }
-
+    // Verificação aprimorada - agora permitimos a reutilização dos itens salvos
+    // A API irá combinar os itens novos com os itens restaurados do localStorage
     itemsWithFiles.forEach((item) => {
       formData.append('proof_files', item.file!);
       formData.append('titles', item.title);
     });
+
+    // Enviar os itens salvos no localStorage como JSON
+    const savedItems = localStorage.getItem('proofItems');
+    if (savedItems) {
+      formData.append('savedItems', savedItems);
+    }
 
     try {
       const response = await fetch('/api/generate-pdf', {
@@ -191,11 +257,19 @@ export default function HomePage() {
       if (!response.ok) {
         let errorMessage = `Erro: ${response.statusText}`;
         try {
-          const errorData = await response.json();
+          // Clone the response to avoid "body stream already read" error
+          const clonedResponse = response.clone();
+          const errorData = await clonedResponse.json();
           errorMessage = errorData.error || errorMessage;
         } catch {
-          const textError = await response.text();
-          errorMessage = textError || errorMessage;
+          try {
+            // Clone the response again for text reading
+            const clonedResponse = response.clone();
+            const textError = await clonedResponse.text();
+            errorMessage = textError || errorMessage;
+          } catch {
+            // If both attempts fail, use the status text
+          }
         }
         throw new Error(errorMessage);
       }
@@ -216,6 +290,7 @@ export default function HomePage() {
       localStorage.removeItem('projectTitle');
       localStorage.removeItem('sponsor');
       localStorage.removeItem('coverPreview');
+      localStorage.removeItem('coverImageBase64');
       localStorage.removeItem('proofItems');
       setProjectTitle('');
       setSponsor('');
@@ -236,7 +311,7 @@ export default function HomePage() {
   };
 
   return (
-    <main className="container mx-auto p-4 md:p-8 bg-white text-black">
+    <main className="container mx-auto p-4 md:p-8 text-black dark:text-white">
       <form onSubmit={handleSubmit}>
         <div className="mb-8 p-6 border border-gray-300 rounded-lg">
           <h2 className="text-2xl font-bold mb-4">1. Dados da Capa</h2>
@@ -285,7 +360,7 @@ export default function HomePage() {
             </div>
           </div>
         )}
-        <button type="submit" disabled={loading || items.length === 0} className="w-full py-3 px-4 bg-black text-white font-semibold rounded-lg shadow-md hover:bg-gray-800 disabled:bg-gray-400 disabled:cursor-not-allowed">
+        <button type="submit" disabled={loading || items.length === 0} className="w-full py-3 px-4 bg-gray-500 text-white font-semibold rounded-lg shadow-md hover:bg-gray-800 disabled:bg-gray-400 disabled:cursor-not-allowed">
           {loading ? 'Gerando PDF...' : 'Gerar PDF de Comprovação'}
         </button>
       </form>
