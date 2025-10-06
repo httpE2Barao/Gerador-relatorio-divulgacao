@@ -7,7 +7,7 @@ import sharp from 'sharp';
 export const config = {
   api: {
     bodyParser: {
-      sizeLimit: '50mb',
+      sizeLimit: '100mb',
     },
   },
 };
@@ -71,6 +71,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Por favor, adicione uma imagem de capa.' }, { status: 400 });
     }
 
+    // Verificar se temos itens reais (com arquivos) ou itens restaurados do localStorage
+    if (!proofFiles.length && (!savedItemsJson || !savedItemsJson.trim())) {
+      return NextResponse.json({ error: 'Por favor, adicione ao menos uma imagem de comprovação.' }, { status: 400 });
+    }
+
     // Combinar os itens salvos com os novos itens
     const allProofFiles: File[] = [...proofFiles];
     const allTitles: string[] = [...titles];
@@ -104,8 +109,9 @@ export async function POST(request: Request) {
     }
 
     // Verificar se temos itens para processar (novos ou restaurados)
-    if (allProofFiles.length === 0) {
-      return NextResponse.json({ error: 'Por favor, adicione ao menos uma imagem de comprovação.' }, { status: 400 });
+    // Se temos itens restaurados do localStorage, podemos prossem mesmo sem arquivos reais
+    if (allProofFiles.length === 0 && (!savedItemsJson || !savedItemsJson.trim())) {
+      return NextResponse.json({ error: 'Por favor, adicione ao menos uma imagem de comprovação ou verifique se há itens salvos.' }, { status: 400 });
     }
 
     const cleanTitle = slugify(projectTitle);

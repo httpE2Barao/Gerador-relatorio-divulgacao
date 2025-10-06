@@ -57,81 +57,107 @@ export default function HomePage() {
 
   // Carregar dados do localStorage quando o componente montar
   useEffect(() => {
-    const savedProjectTitle = localStorage.getItem('projectTitle');
-    const savedSponsor = localStorage.getItem('sponsor');
-    const savedCoverPreview = localStorage.getItem('coverPreview');
-    const savedCoverImageBase64 = localStorage.getItem('coverImageBase64');
-    const savedItems = localStorage.getItem('proofItems');
+    try {
+      const savedProjectTitle = localStorage.getItem('projectTitle');
+      const savedSponsor = localStorage.getItem('sponsor');
+      const savedCoverPreview = localStorage.getItem('coverPreview');
+      const savedCoverImageBase64 = localStorage.getItem('coverImageBase64');
+      const savedItems = localStorage.getItem('proofItems');
 
-    if (savedProjectTitle) setProjectTitle(savedProjectTitle);
-    if (savedSponsor) setSponsor(savedSponsor);
-    if (savedCoverPreview) setCoverPreview(savedCoverPreview);
-    
-    // Restaurar a imagem de capa do base64
-    if (savedCoverImageBase64 && savedCoverPreview) {
-      try {
-        convertBase64ToBlob(savedCoverImageBase64, 'image/jpeg');
-        // Não podemos restaurar o arquivo real, mas podemos manter o preview
-      } catch (e) {
-        console.error('Erro ao restaurar imagem de capa:', e);
+      if (savedProjectTitle) setProjectTitle(savedProjectTitle);
+      if (savedSponsor) setSponsor(savedSponsor);
+      if (savedCoverPreview) setCoverPreview(savedCoverPreview);
+
+      // Restaurar a imagem de capa do base64
+      if (savedCoverImageBase64 && savedCoverPreview) {
+        try {
+          convertBase64ToBlob(savedCoverImageBase64, 'image/jpeg');
+          // Não podemos restaurar o arquivo real, mas podemos manter o preview
+        } catch (e) {
+          console.error('Erro ao restaurar imagem de capa:', e);
+        }
       }
-    }
-    
-    if (savedItems) {
-      try {
-        const parsedItems: StoredItem[] = JSON.parse(savedItems);
-        // Restaurar os itens com previews e títulos
-        const restoredItems: ImageItem[] = parsedItems.map((item) => ({
-          id: item.id,
-          preview: item.preview,
-          title: item.title
-          // file: undefined - não podemos restaurar o arquivo do localStorage diretamente
-        }));
-        setItems(restoredItems);
-      } catch (e) {
-        console.error('Erro ao restaurar itens do localStorage:', e);
+
+      if (savedItems) {
+        try {
+          const parsedItems: StoredItem[] = JSON.parse(savedItems);
+          // Restaurar os itens com previews e títulos
+          const restoredItems: ImageItem[] = parsedItems.map((item) => ({
+            id: item.id,
+            preview: item.preview,
+            title: item.title
+            // file: undefined - não podemos restaurar o arquivo do localStorage diretamente
+          }));
+          setItems(restoredItems);
+        } catch (e) {
+          console.error('Erro ao restaurar itens do localStorage:', e);
+        }
       }
+    } catch (e) {
+      console.error('Erro ao carregar dados do localStorage:', e);
+      // Se localStorage falhar, limpar os dados
+      localStorage.clear();
+      setProjectTitle('');
+      setSponsor('');
+      setCoverPreview('');
+      setItems([]);
     }
   }, []);
 
   // Salvar dados no localStorage sempre que houver alterações
   useEffect(() => {
-    localStorage.setItem('projectTitle', projectTitle);
-    localStorage.setItem('sponsor', sponsor);
-    localStorage.setItem('coverPreview', coverPreview);
-    
-    // Salvar a imagem de capa como base64
-    if (coverImage) {
-      convertToBase64(coverImage)
-        .then(base64 => {
-          localStorage.setItem('coverImageBase64', base64);
-        })
-        .catch(e => {
-          console.error('Erro ao converter imagem de capa para base64:', e);
-        });
-    }
-    
-    // Salvar os itens com previews, títulos e arquivos como base64
-    Promise.all(
-      items.map(async (item) => {
-        let fileBase64 = '';
-        if (item.file) {
-          try {
-            fileBase64 = await convertToBase64(item.file);
-          } catch (e) {
-            console.error('Erro ao converter arquivo para base64:', e);
-          }
+    try {
+      localStorage.setItem('projectTitle', projectTitle);
+      localStorage.setItem('sponsor', sponsor);
+      localStorage.setItem('coverPreview', coverPreview);
+
+      // Verificar espaço disponível antes de salvar imagens grandes
+      const checkStorageSpace = () => {
+        const testKey = 'test_' + Date.now();
+        try {
+          localStorage.setItem(testKey, 'test');
+          localStorage.removeItem(testKey);
+          return true;
+        } catch (e) {
+          return false;
         }
-        return {
-          id: item.id,
-          preview: item.preview,
-          title: item.title,
-          fileBase64,
-        };
-      })
-    ).then((itemsToSave: StoredItem[]) => {
-      localStorage.setItem('proofItems', JSON.stringify(itemsToSave));
-    });
+      };
+
+      // Salvar a imagem de capa como base64 (somente se houver espaço)
+      if (coverImage && checkStorageSpace()) {
+        convertToBase64(coverImage)
+          .then(base64 => {
+            try {
+              localStorage.setItem('coverImageBase64', base64);
+            } catch (e) {
+              console.error('Erro ao salvar imagem de capa no localStorage:', e);
+              localStorage.removeItem('coverImageBase64');
+            }
+          })
+          .catch(e => {
+            console.error('Erro ao converter imagem de capa para base64:', e);
+          });
+      }
+
+      // Salvar os itens (limitar a 5 itens para não exceder o quota)
+      const itemsToSave = items.slice(0, 5).map((item) => ({
+        id: item.id,
+        preview: item.preview,
+        title: item.title,
+        // Não salvar os arquivos como base64 para economizar espaço
+      }));
+
+      try {
+        localStorage.setItem('proofItems', JSON.stringify(itemsToSave));
+      } catch (e) {
+        console.error('Erro ao salvar itens no localStorage:', e);
+        // Tentar limpar localStorage e salvar novamente
+        localStorage.removeItem('proofItems');
+        localStorage.setItem('proofItems', JSON.stringify([]));
+      }
+    } catch (e) {
+      console.error('Erro geral ao salvar localStorage:', e);
+    }
   }, [projectTitle, sponsor, coverPreview, coverImage, items]);
 
   const processFile = async (file: File): Promise<File> => {
