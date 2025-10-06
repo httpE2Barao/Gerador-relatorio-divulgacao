@@ -72,17 +72,16 @@ export async function POST(request: Request) {
     }
 
     // Combinar os itens salvos com os novos itens
-    let allProofFiles: File[] = [...proofFiles];
-    let allTitles: string[] = [...titles];
+    const allProofFiles: File[] = [...proofFiles];
+    const allTitles: string[] = [...titles];
 
     // Processar os itens salvos no localStorage
-    let restoredItemsCount = 0;
     if (savedItemsJson) {
       try {
         const savedItems = JSON.parse(savedItemsJson);
-        savedItems.forEach((item: any) => {
+        savedItems.forEach((item: { id: string; fileBase64?: string; title: string }) => {
           // Verificar se o item já foi adicionado como novo arquivo
-          const isAlreadyAdded = proofFiles.some((file, index) => {
+          const isAlreadyAdded = proofFiles.some(() => {
             // Esta verificação é simplificada - em uma implementação real, você pode querer
             // usar um ID mais robusto para verificar duplicatas
             return false;
@@ -94,7 +93,6 @@ export async function POST(request: Request) {
               const file = base64ToFile(item.fileBase64, `restored-${item.id}.jpg`, 'image/jpeg');
               allProofFiles.push(file);
               allTitles.push(item.title);
-              restoredItemsCount++;
             } catch (e) {
               console.error('Erro ao restaurar arquivo do localStorage:', e);
             }

@@ -70,8 +70,7 @@ export default function HomePage() {
     // Restaurar a imagem de capa do base64
     if (savedCoverImageBase64 && savedCoverPreview) {
       try {
-        const blob = convertBase64ToBlob(savedCoverImageBase64, 'image/jpeg');
-        const file = new File([blob], 'cover.jpg', { type: 'image/jpeg' });
+        convertBase64ToBlob(savedCoverImageBase64, 'image/jpeg');
         // Não podemos restaurar o arquivo real, mas podemos manter o preview
       } catch (e) {
         console.error('Erro ao restaurar imagem de capa:', e);
