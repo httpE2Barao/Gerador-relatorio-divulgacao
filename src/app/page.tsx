@@ -257,15 +257,13 @@ export default function HomePage() {
       if (!response.ok) {
         let errorMessage = `Erro: ${response.statusText}`;
         try {
-          // Clone the response to avoid "body stream already read" error
-          const clonedResponse = response.clone();
-          const errorData = await clonedResponse.json();
+          // Read the response body only once
+          const errorData = await response.json();
           errorMessage = errorData.error || errorMessage;
         } catch {
           try {
-            // Clone the response again for text reading
-            const clonedResponse = response.clone();
-            const textError = await clonedResponse.text();
+            // If JSON parsing fails, try text
+            const textError = await response.text();
             errorMessage = textError || errorMessage;
           } catch {
             // If both attempts fail, use the status text
