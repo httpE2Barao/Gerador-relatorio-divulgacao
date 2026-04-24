@@ -1,22 +1,22 @@
 'use client';
 
 import { useState, useEffect, ChangeEvent, FormEvent } from 'react';
-// REMOVIDO: A importação estática abaixo causava o erro no build.
-// import heic2any from 'heic2any'; 
-
-// Interface para os itens armazenados no localStorage
-interface StoredItem {
-  id: string;
-  preview: string;
-  title: string;
-  fileBase64?: string; // Adicionando suporte para armazenar o arquivo como base64
-}
+import { saveCover, getCover, clearCover, saveProof, getAllProofs, deleteProof, clearAllProofs } from '@/lib/indexedDB';
 
 interface ImageItem {
   id: string;
-  file?: File; // Tornando opcional pois pode não estar disponível ao restaurar do localStorage
-  preview: string;
+  fileBlob: Blob;
+  previewBase64: string;
   title: string;
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 }
 
 export default function HomePage() {
@@ -29,136 +29,48 @@ export default function HomePage() {
   const [items, setItems] = useState<ImageItem[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Função para converter uma imagem em base64
-  const convertToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = error => reject(error);
-    });
+  // Converter base64 para URL temporária para exibição
+  const getPreviewUrl = (base64: string): string => {
+    return base64;
   };
 
-  // Função para converter base64 em Blob
-  const convertBase64ToBlob = (base64: string, contentType: string = ''): Blob => {
-    const byteCharacters = atob(base64.split(',')[1]);
-    const byteArrays = [];
-    for (let offset = 0; offset < byteCharacters.length; offset += 512) {
-      const slice = byteCharacters.slice(offset, offset + 512);
-      const byteNumbers = new Array(slice.length);
-      for (let i = 0; i < slice.length; i++) {
-        byteNumbers[i] = slice.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      byteArrays.push(byteArray);
-    }
-    return new Blob(byteArrays, { type: contentType });
-  };
-
-  // Carregar dados do localStorage quando o componente montar
+  // Carregar dados do IndexedDB ao iniciar
   useEffect(() => {
-    try {
-      const savedProjectTitle = localStorage.getItem('projectTitle');
-      const savedSponsor = localStorage.getItem('sponsor');
-      const savedCoverPreview = localStorage.getItem('coverPreview');
-      const savedCoverImageBase64 = localStorage.getItem('coverImageBase64');
-      const savedItems = localStorage.getItem('proofItems');
-
-      if (savedProjectTitle) setProjectTitle(savedProjectTitle);
-      if (savedSponsor) setSponsor(savedSponsor);
-      if (savedCoverPreview) setCoverPreview(savedCoverPreview);
-
-      // Restaurar a imagem de capa do base64
-      if (savedCoverImageBase64 && savedCoverPreview) {
-        try {
-          convertBase64ToBlob(savedCoverImageBase64, 'image/jpeg');
-          // Não podemos restaurar o arquivo real, mas podemos manter o preview
-        } catch (e) {
-          console.error('Erro ao restaurar imagem de capa:', e);
+    async function loadFromDB() {
+      try {
+        // Carregar capa do IndexedDB
+        const savedCover = await getCover();
+        if (savedCover) {
+          setProjectTitle(savedCover.projectTitle);
+          setSponsor(savedCover.sponsor);
+          setCoverPreview(savedCover.previewBase64);
+          setCoverImage(new File([savedCover.fileBlob], 'cover.jpg', { type: 'image/jpeg' }));
+          console.log('Capa carregada do IndexedDB');
         }
+      } catch (e) {
+        console.error('Erro ao carregar capa do IndexedDB:', e);
       }
-
-      if (savedItems) {
-        try {
-          const parsedItems: StoredItem[] = JSON.parse(savedItems);
-          // Restaurar os itens com previews e títulos
-          const restoredItems: ImageItem[] = parsedItems.map((item) => ({
-            id: item.id,
-            preview: item.preview,
-            title: item.title
-            // file: undefined - não podemos restaurar o arquivo do localStorage diretamente
-          }));
-          setItems(restoredItems);
-        } catch (e) {
-          console.error('Erro ao restaurar itens do localStorage:', e);
-        }
-      }
-    } catch (e) {
-      console.error('Erro ao carregar dados do localStorage:', e);
-      // Se localStorage falhar, limpar os dados
-      localStorage.clear();
-      setProjectTitle('');
-      setSponsor('');
-      setCoverPreview('');
-      setItems([]);
-    }
-  }, []);
-
-  // Salvar dados no localStorage sempre que houver alterações
-  useEffect(() => {
-    try {
-      localStorage.setItem('projectTitle', projectTitle);
-      localStorage.setItem('sponsor', sponsor);
-      localStorage.setItem('coverPreview', coverPreview);
-
-      // Verificar espaço disponível antes de salvar imagens grandes
-      const checkStorageSpace = () => {
-        const testKey = 'test_' + Date.now();
-        try {
-          localStorage.setItem(testKey, 'test');
-          localStorage.removeItem(testKey);
-          return true;
-        } catch (e) {
-          return false;
-        }
-      };
-
-      // Salvar a imagem de capa como base64 (somente se houver espaço)
-      if (coverImage && checkStorageSpace()) {
-        convertToBase64(coverImage)
-          .then(base64 => {
-            try {
-              localStorage.setItem('coverImageBase64', base64);
-            } catch (e) {
-              console.error('Erro ao salvar imagem de capa no localStorage:', e);
-              localStorage.removeItem('coverImageBase64');
-            }
-          })
-          .catch(e => {
-            console.error('Erro ao converter imagem de capa para base64:', e);
-          });
-      }
-
-      // Salvar os itens (limitar a 5 itens para não exceder o quota)
-      const itemsToSave = items.slice(0, 5).map((item) => ({
-        id: item.id,
-        preview: item.preview,
-        title: item.title,
-        // Não salvar os arquivos como base64 para economizar espaço
-      }));
 
       try {
-        localStorage.setItem('proofItems', JSON.stringify(itemsToSave));
+        const savedProofs = await getAllProofs();
+        
+        if (savedProofs.length > 0) {
+          const restoredItems = savedProofs.map((proof) => ({
+            id: proof.id,
+            fileBlob: proof.fileBlob,
+            previewBase64: proof.previewBase64,
+            title: proof.title,
+          }));
+          setItems(restoredItems);
+          console.log(`Carregados ${restoredItems.length} itens do IndexedDB`);
+        }
       } catch (e) {
-        console.error('Erro ao salvar itens no localStorage:', e);
-        // Tentar limpar localStorage e salvar novamente
-        localStorage.removeItem('proofItems');
-        localStorage.setItem('proofItems', JSON.stringify([]));
+        console.error('Erro ao carregar do IndexedDB:', e);
       }
-    } catch (e) {
-      console.error('Erro geral ao salvar localStorage:', e);
     }
-  }, [projectTitle, sponsor, coverPreview, coverImage, items]);
+
+    loadFromDB();
+  }, []);
 
   const processFile = async (file: File): Promise<File> => {
     const isHeic = file.type === 'image/heic' || file.type === 'image/heif' || file.name.toLowerCase().endsWith('.heic');
@@ -166,8 +78,6 @@ export default function HomePage() {
     if (isHeic) {
       setLoading(true);
       try {
-        // CORREÇÃO: A biblioteca 'heic2any' é importada dinamicamente aqui,
-        // garantindo que isso só aconteça no ambiente do navegador.
         const heic2any = (await import('heic2any')).default;
 
         console.log('Convertendo arquivo HEIC para JPEG...');
@@ -197,35 +107,111 @@ export default function HomePage() {
       const originalFile = e.target.files[0];
       const processedFile = await processFile(originalFile);
 
+      const base64 = await blobToBase64(processedFile);
+      
+      // Salvar no IndexedDB
+      await saveCover({
+        id: 'cover',
+        projectTitle,
+        sponsor,
+        fileBlob: processedFile,
+        previewBase64: base64,
+      });
+
       setCoverImage(processedFile);
-      setCoverPreview(URL.createObjectURL(processedFile));
+      setCoverPreview(base64);
     }
   };
 
   const handleProofImagesChange = async (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      const processedFiles = await Promise.all(
-        Array.from(e.target.files).map(file => processFile(file))
-      );
+      setLoading(true);
+      try {
+        const processedFiles = await Promise.all(
+          Array.from(e.target.files).map(file => processFile(file))
+        );
 
-      const newItems = processedFiles.map(file => ({
-        id: Math.random().toString(36).substr(2, 9), // ID único para cada item
-        file,
-        preview: URL.createObjectURL(file),
-        title: '',
-      }));
-      setItems(prevItems => [...prevItems, ...newItems]);
+        for (const file of processedFiles) {
+          const id = Math.random().toString(36).substr(2, 9);
+          const previewBase64 = await blobToBase64(file);
+
+          // Salvar no IndexedDB
+          await saveProof({
+            id,
+            fileBlob: file,
+            previewBase64,
+            title: '',
+          });
+
+          setItems(prevItems => [...prevItems, {
+            id,
+            fileBlob: file,
+            previewBase64,
+            title: '',
+          }]);
+        }
+      } catch (e) {
+        console.error('Erro ao processar imagens:', e);
+      } finally {
+        setLoading(false);
+      }
     }
     e.target.value = '';
   };
 
-  const handleTitleChange = (index: number, newTitle: string) => {
+  // Atualizar capa quando título ou patrocinador mudar
+  useEffect(() => {
+    async function updateCover() {
+      if (coverPreview) {
+        await saveCover({
+          id: 'cover',
+          projectTitle,
+          sponsor,
+          fileBlob: coverImage!,
+          previewBase64: coverPreview,
+        });
+      }
+    }
+    if (coverImage || coverPreview) {
+      updateCover();
+    }
+  }, [projectTitle, sponsor, coverImage]);
+
+  const handleTitleChange = async (index: number, newTitle: string) => {
     const updatedItems = [...items];
     updatedItems[index].title = newTitle;
     setItems(updatedItems);
+
+    const item = updatedItems[index];
+    await saveProof({
+      id: item.id,
+      fileBlob: item.fileBlob,
+      previewBase64: item.previewBase64,
+      title: newTitle,
+    });
   };
 
-  const handleDeleteItem = (index: number) => {
+  // Atualizar capa quando título ou patrocinador mudar
+  useEffect(() => {
+    async function updateCover() {
+      if (coverPreview) {
+        await saveCover({
+          id: 'cover',
+          projectTitle,
+          sponsor,
+          fileBlob: coverImage!,
+          previewBase64: coverPreview,
+        });
+      }
+    }
+    if (coverImage || coverPreview) {
+      updateCover();
+    }
+  }, [projectTitle, sponsor, coverImage]);
+
+  const handleDeleteItem = async (index: number) => {
+    const item = items[index];
+    await deleteProof(item.id);
     setItems(prevItems => prevItems.filter((_, i) => i !== index));
   };
 
@@ -240,7 +226,6 @@ export default function HomePage() {
       return;
     }
     
-    // Verificar se todos os itens têm título preenchido
     const itemsWithoutTitle = items.filter(item => !item.title.trim());
     if (itemsWithoutTitle.length > 0) {
       alert('Por favor, preencha o local para todas as imagens de comprovação.');
@@ -257,21 +242,12 @@ export default function HomePage() {
       formData.append('coverImage', coverImage);
     }
 
-    // Adicionar todos os itens que têm arquivos ao formulário
-    const itemsWithFiles = items.filter(item => item.file);
-    
-    // Verificação aprimorada - agora permitimos a reutilização dos itens salvos
-    // A API irá combinar os itens novos com os itens restaurados do localStorage
-    itemsWithFiles.forEach((item) => {
-      formData.append('proof_files', item.file!);
+    // Adicionar todos os itens ao formulário
+    items.forEach((item) => {
+      const file = new File([item.fileBlob], `proof-${item.id}.jpg`, { type: 'image/jpeg' });
+      formData.append('proof_files', file);
       formData.append('titles', item.title);
     });
-
-    // Enviar os itens salvos no localStorage como JSON
-    const savedItems = localStorage.getItem('proofItems');
-    if (savedItems) {
-      formData.append('savedItems', savedItems);
-    }
 
     try {
       const response = await fetch('/api/generate-pdf', {
@@ -282,16 +258,14 @@ export default function HomePage() {
       if (!response.ok) {
         let errorMessage = `Erro: ${response.statusText}`;
         try {
-          // Read the response body only once
           const errorData = await response.json();
           errorMessage = errorData.error || errorMessage;
         } catch {
           try {
-            // If JSON parsing fails, try text
             const textError = await response.text();
             errorMessage = textError || errorMessage;
           } catch {
-            // If both attempts fail, use the status text
+            // If both attempts fail
           }
         }
         throw new Error(errorMessage);
@@ -310,11 +284,8 @@ export default function HomePage() {
       window.URL.revokeObjectURL(url);
 
       // Limpar dados após geração bem-sucedida do PDF
-      localStorage.removeItem('projectTitle');
-      localStorage.removeItem('sponsor');
-      localStorage.removeItem('coverPreview');
-      localStorage.removeItem('coverImageBase64');
-      localStorage.removeItem('proofItems');
+      await clearCover();
+      await clearAllProofs();
       setProjectTitle('');
       setSponsor('');
       setCoverImage(null);
@@ -352,8 +323,9 @@ export default function HomePage() {
             <div>
               <label className="block text-base font-medium mb-1">Imagem de Capa</label>
               <input type="file" accept="image/*" onChange={handleCoverImageChange} className="mt-1 block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-200 file:text-black hover:file:bg-gray-300" />
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              {coverPreview && <img src={coverPreview} alt="Preview da capa" className="mt-4 rounded-lg w-full object-contain h-32 border border-gray-200" />}
+              {coverPreview && (
+                <img src={getPreviewUrl(coverPreview)} alt="Preview da capa" className="mt-4 rounded-lg w-full object-contain h-32 border border-gray-200" />
+              )}
             </div>
           </div>
         </div>
@@ -363,14 +335,20 @@ export default function HomePage() {
         </div>
         {items.length > 0 && (
           <div className="mb-6">
-            <h3 className="text-xl font-bold mb-2">3. Locais das Imagens</h3>
+            <h3 className="text-xl font-bold mb-2">3. Locais das Imagens ({items.length} itens salvos)</h3>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               {items.map((item, index) => (
-                <div key={`${item.id}`} className="border border-gray-300 rounded-lg relative flex flex-col">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={item.preview} alt={`Preview ${index}`} className="w-full h-auto object-cover rounded-t-lg" style={{ aspectRatio: '2/3' }} />
+                <div key={item.id} className="border border-gray-300 rounded-lg relative flex flex-col">
+                  <img src={getPreviewUrl(item.previewBase64)} alt={`Preview ${index}`} className="w-full h-auto object-cover rounded-t-lg" style={{ aspectRatio: '2/3' }} />
                   <div className="p-2 mt-auto">
-                    <input type="text" placeholder="Local" value={item.title} onChange={(e) => handleTitleChange(index, e.target.value)} className="w-full p-1 border border-gray-400 rounded-md shadow-sm focus:border-black focus:ring-black text-sm" required />
+                    <input 
+                      type="text" 
+                      placeholder="Local" 
+                      value={item.title} 
+                      onChange={(e) => handleTitleChange(index, e.target.value)} 
+                      className="w-full p-1 border border-gray-400 rounded-md shadow-sm focus:border-black focus:ring-black text-sm" 
+                      required 
+                    />
                   </div>
                   <button
                     type="button"
