@@ -11,7 +11,7 @@
   "dependencies": {
     "claude": "^0.1.1",
     "heic2any": "^0.0.4",
-    "next": "15.3.5",
+    "next": "^15.5.19",
     "pdf-lib": "^1.17.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -24,7 +24,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "15.3.5",
+    "eslint-config-next": "^15.5.19",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
