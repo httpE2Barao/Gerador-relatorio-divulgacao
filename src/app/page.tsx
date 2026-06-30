@@ -19,6 +19,39 @@ function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
+const COMPRESS_MAX = 1600;
+const COMPRESS_QUALITY = 0.8;
+
+function compressImage(blob: Blob): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(img.src);
+      let { width, height } = img;
+      if (width > COMPRESS_MAX || height > COMPRESS_MAX) {
+        const ratio = Math.min(COMPRESS_MAX / width, COMPRESS_MAX / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(img, 0, 0, width, height);
+      canvas.toBlob(
+        (out) => {
+          if (out) resolve(out);
+          else reject(new Error('compressImage: toBlob failed'));
+        },
+        'image/jpeg',
+        COMPRESS_QUALITY
+      );
+    };
+    img.onerror = () => reject(new Error('compressImage: failed to load image'));
+    img.src = URL.createObjectURL(blob);
+  });
+}
+
 export default function HomePage() {
   const [projectTitle, setProjectTitle] = useState('');
   const [sponsor, setSponsor] = useState('');
@@ -207,18 +240,19 @@ export default function HomePage() {
     setLoading(true);
 
     const formData = new FormData();
-
     formData.append('projectTitle', projectTitle);
     formData.append('sponsor', sponsor);
+
     if (coverImage) {
-      formData.append('coverImage', coverImage);
+      const compressed = await compressImage(coverImage);
+      formData.append('coverImage', compressed, 'cover.jpg');
     }
 
-    items.forEach((item) => {
-      const file = new File([item.fileBlob], `proof-${item.id}.jpg`, { type: 'image/jpeg' });
-      formData.append('proof_files', file);
+    for (const item of items) {
+      const compressed = await compressImage(item.fileBlob);
+      formData.append('proof_files', compressed, `proof-${item.id}.jpg`);
       formData.append('titles', item.title);
-    });
+    }
 
     try {
       const response = await fetch('/api/generate-pdf', {
