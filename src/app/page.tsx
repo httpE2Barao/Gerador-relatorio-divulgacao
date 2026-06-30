@@ -29,23 +29,19 @@ export default function HomePage() {
   const [items, setItems] = useState<ImageItem[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Converter base64 para URL temporária para exibição
   const getPreviewUrl = (base64: string): string => {
     return base64;
   };
 
-  // Carregar dados do IndexedDB ao iniciar
   useEffect(() => {
     async function loadFromDB() {
       try {
-        // Carregar capa do IndexedDB
         const savedCover = await getCover();
         if (savedCover) {
           setProjectTitle(savedCover.projectTitle);
           setSponsor(savedCover.sponsor);
           setCoverPreview(savedCover.previewBase64);
           setCoverImage(new File([savedCover.fileBlob], 'cover.jpg', { type: 'image/jpeg' }));
-          console.log('Capa carregada do IndexedDB');
         }
       } catch (e) {
         console.error('Erro ao carregar capa do IndexedDB:', e);
@@ -53,7 +49,7 @@ export default function HomePage() {
 
       try {
         const savedProofs = await getAllProofs();
-        
+
         if (savedProofs.length > 0) {
           const restoredItems = savedProofs.map((proof) => ({
             id: proof.id,
@@ -62,7 +58,6 @@ export default function HomePage() {
             title: proof.title,
           }));
           setItems(restoredItems);
-          console.log(`Carregados ${restoredItems.length} itens do IndexedDB`);
         }
       } catch (e) {
         console.error('Erro ao carregar do IndexedDB:', e);
@@ -80,7 +75,6 @@ export default function HomePage() {
       try {
         const heic2any = (await import('heic2any')).default;
 
-        console.log('Convertendo arquivo HEIC para JPEG...');
         const convertedBlob = await heic2any({
           blob: file,
           toType: 'image/jpeg',
@@ -89,7 +83,6 @@ export default function HomePage() {
 
         const newFileName = file.name.replace(/\.[^/.]+$/, "") + ".jpeg";
         const convertedFile = new File([convertedBlob], newFileName, { type: 'image/jpeg' });
-        console.log('Conversão concluída.');
         return convertedFile;
       } catch (error) {
         console.error('Erro ao converter HEIC:', error);
@@ -108,8 +101,7 @@ export default function HomePage() {
       const processedFile = await processFile(originalFile);
 
       const base64 = await blobToBase64(processedFile);
-      
-      // Salvar no IndexedDB
+
       await saveCover({
         id: 'cover',
         projectTitle,
@@ -135,7 +127,6 @@ export default function HomePage() {
           const id = Math.random().toString(36).substr(2, 9);
           const previewBase64 = await blobToBase64(file);
 
-          // Salvar no IndexedDB
           await saveProof({
             id,
             fileBlob: file,
@@ -159,7 +150,6 @@ export default function HomePage() {
     e.target.value = '';
   };
 
-  // Atualizar capa quando título ou patrocinador mudar
   useEffect(() => {
     async function updateCover() {
       if (coverPreview) {
@@ -191,24 +181,6 @@ export default function HomePage() {
     });
   };
 
-  // Atualizar capa quando título ou patrocinador mudar
-  useEffect(() => {
-    async function updateCover() {
-      if (coverPreview) {
-        await saveCover({
-          id: 'cover',
-          projectTitle,
-          sponsor,
-          fileBlob: coverImage!,
-          previewBase64: coverPreview,
-        });
-      }
-    }
-    if (coverImage || coverPreview) {
-      updateCover();
-    }
-  }, [projectTitle, sponsor, coverImage]);
-
   const handleDeleteItem = async (index: number) => {
     const item = items[index];
     await deleteProof(item.id);
@@ -225,13 +197,13 @@ export default function HomePage() {
       alert('Por favor, adicione ao menos uma imagem de comprovação.');
       return;
     }
-    
+
     const itemsWithoutTitle = items.filter(item => !item.title.trim());
     if (itemsWithoutTitle.length > 0) {
       alert('Por favor, preencha o local para todas as imagens de comprovação.');
       return;
     }
-    
+
     setLoading(true);
 
     const formData = new FormData();
@@ -242,7 +214,6 @@ export default function HomePage() {
       formData.append('coverImage', coverImage);
     }
 
-    // Adicionar todos os itens ao formulário
     items.forEach((item) => {
       const file = new File([item.fileBlob], `proof-${item.id}.jpg`, { type: 'image/jpeg' });
       formData.append('proof_files', file);
@@ -265,7 +236,6 @@ export default function HomePage() {
             const textError = await response.text();
             errorMessage = textError || errorMessage;
           } catch {
-            // If both attempts fail
           }
         }
         throw new Error(errorMessage);
@@ -283,7 +253,6 @@ export default function HomePage() {
       a.remove();
       window.URL.revokeObjectURL(url);
 
-      // Limpar dados após geração bem-sucedida do PDF
       await clearCover();
       await clearAllProofs();
       setProjectTitle('');
